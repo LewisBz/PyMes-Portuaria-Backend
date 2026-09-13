@@ -1,10 +1,17 @@
-# Spec Kit — Guia paso a paso con opencode
+# Spec Kit — Guia paso a paso (Cursor + opencode)
 
 ## Que es Spec-Driven Development?
 
 Spec-Driven Development (SDD) es un enfoque donde **las especificaciones se vuelven ejecutables**. En vez de escribir specs que se descartan despues, Spec Kit las usa para generar codigo funcional directamente a traves de un agente de IA.
 
 En resumen: defines **que** quieres construir, y el agente se encarga del **como**.
+
+Este repo tiene Spec Kit inicializado. La integracion **default es Cursor** (`cursor-agent`). **opencode sigue instalado** para usarlo desde ese agente.
+
+| Agente | Clave CLI | Archivos | Como invocar |
+|--------|-----------|----------|--------------|
+| Cursor (default) | `cursor-agent` | `.cursor/skills/speckit-*/SKILL.md` | `/speckit-specify`, `/speckit-plan`, ... |
+| opencode | `opencode` | `.opencode/commands/speckit.*.md` | `/speckit.specify`, `/speckit.plan`, ... |
 
 ---
 
@@ -17,7 +24,8 @@ Antes de empezar necesitas tener instalado:
 | [uv](https://docs.astral.sh/uv/) | Cualquier version reciente | `uv --version` |
 | [Python](https://www.python.org/downloads/) | 3.11+ | `python --version` |
 | [Git](https://git-scm.com/downloads) | 2.20+ | `git --version` |
-| [opencode](https://opencode.ai) | Instalado y funcionando | Abrir opencode en tu proyecto |
+| [Cursor](https://cursor.com) | IDE con Agent | Abrir este proyecto en Cursor |
+| [opencode](https://opencode.ai) (opcional) | Instalado y funcionando | Solo si trabajas desde opencode |
 
 > **Nota:** Si usas `uv`, no necesitas instalar Python manualmente. `uv` lo descarga automaticamente cuando lo necesita.
 
@@ -90,100 +98,123 @@ uv tool uninstall specify-cli
 
 ---
 
-## Paso 3: Inicializar tu proyecto
+## Paso 3: Inicializar o cambiar de agente
 
-### Proyecto nuevo
+### Proyecto nuevo (Cursor)
 
 ```bash
-specify init mi-proyecto --integration opencode
+specify init mi-proyecto --integration cursor-agent --script ps
 cd mi-proyecto
 ```
 
 ### Proyecto existente (directorio actual)
 
 ```bash
-specify init . --here --integration opencode
+specify init . --here --integration cursor-agent --script ps
 ```
 
-> **Nota:** Si el directorio no esta vacio, usa `--force` para forzar la inicializacion:
-> ```bash
-> specify init . --here --integration opencode --force
-> ```
+> **Cuidado:** `--force` en `specify init` puede pisar `.specify/` (templates, scripts, constitution). En un repo que **ya** tiene Spec Kit, no reinicialices: usa los comandos de integracion.
 
-Esto crea una carpeta `.specify/` con la siguiente estructura:
+### Este proyecto ya esta inicializado
+
+No hace falta `specify init`. Para anadir Cursor **sin quitar** opencode:
+
+```powershell
+specify integration install cursor-agent --script ps --force
+specify integration use cursor-agent
+specify integration list
+```
+
+`--force` en `install` solo autoriza tener dos integraciones a la vez (opencode no es multi-install-safe). `--force` en `use` **no** es necesario si quieres conservar scripts y templates ya customizados.
+
+Esto deja:
+
+```
+.specify/                 # Infra compartida (no se reescribe al anadir Cursor)
+.cursor/skills/           # Skills de Spec Kit para Cursor
+.opencode/commands/       # Slash commands de Spec Kit para opencode
+```
+
+Estructura de `.specify/`:
 
 ```
 .specify/
-├── integrations/       # Config de integracion con opencode
+├── integrations/       # Manifests de cada agente
 ├── memory/             # Constitution y memoria del proyecto
-├── scripts/            # Scripts de automatizacion
+├── scripts/            # Scripts de automatizacion (PowerShell en este repo)
 ├── templates/          # Templates para specs, plans y tasks
 ├── workflows/          # Workflow de Spec Kit
 └── init-options.json   # Opciones de inicializacion
+```
+
+Para volver a opencode como default (sin desinstalar Cursor):
+
+```powershell
+specify integration use opencode
 ```
 
 ---
 
 ## Paso 4: El workflow completo
 
-Una vez inicializado, abre **opencode** en el directorio del proyecto y usa los slash commands en este orden:
+En **Cursor**, abre Agent y usa los skills en este orden (separador `-`). En **opencode**, los mismos pasos con punto (`/speckit.specify`).
 
-### 1. `/speckit.constitution` — Establecer principios
+### 1. `/speckit-constitution` — Establecer principios
 
 Crea el documento fundacional del proyecto. Define estandares de codigo, testing, arquitectura y gobernanza.
 
 ```
-/speckit.constitution Define principios para nuestro proyecto: codigo limpio,
+/speckit-constitution Define principios para nuestro proyecto: codigo limpio,
 testeo obligatorio, documentacion clara, y arquitectura modular.
 ```
 
-### 2. `/speckit.specify` — Definir que construir
+### 2. `/speckit-specify` — Definir que construir
 
 Describe la feature o funcionalidad que quieres implementar.
 
 ```
-/speckit.specify Quiero un endpoint REST para gestionar usuarios con
+/speckit-specify Quiero un endpoint REST para gestionar usuarios con
 autenticacion JWT, CRUD completo, y validacion de datos.
 ```
 
-### 3. `/speckit.clarify` — Resolver ambiguedades (opcional)
+### 3. `/speckit-clarify` — Resolver ambiguedades (opcional)
 
 El agente te hace preguntas estructuradas para aclarar puntos antes de planificar.
 
 ```
-/speckit.clarify
+/speckit-clarify
 ```
 
-### 4. `/speckit.plan` — Plan tecnico
+### 4. `/speckit-plan` — Plan tecnico
 
 Genera la arquitectura, stack tecnico, y estructura del codigo a implementar.
 
 ```
-/speckit.plan
+/speckit-plan
 ```
 
-### 5. `/speckit.tasks` — Dividir en tareas
+### 5. `/speckit-tasks` — Dividir en tareas
 
 Descompone el plan en tareas accionables y ordenadas.
 
 ```
-/speckit.tasks
+/speckit-tasks
 ```
 
-### 6. `/speckit.implement` — Ejecutar
+### 6. `/speckit-implement` — Ejecutar
 
 El agente valida todos los artefactos y ejecuta la implementacion en orden.
 
 ```
-/speckit.implement
+/speckit-implement
 ```
 
-### 7. `/speckit.converge` — Evaluar gaps (opcional)
+### 7. `/speckit-converge` — Evaluar gaps (opcional)
 
 Evalua el codigo generado contra el spec original y agrega tareas pendientes si hay gaps.
 
 ```
-/speckit.converge
+/speckit-converge
 ```
 
 ### Flujo visual
@@ -203,18 +234,22 @@ constitution → specify → clarify → plan → tasks → implement → conver
 | `specify version` | Mostrar version instalada |
 | `specify check` | Verificar dependencias y configuracion |
 | `specify self upgrade` | Auto-actualizar a la ultima version |
-| `specify integration list` | Listar integraciones disponibles |
+| `specify integration list` | Listar integraciones (marca default e instaladas) |
+| `specify integration install <key>` | Instalar un agente (usa `--force` si ya hay otro no multi-install-safe) |
+| `specify integration use <key>` | Cambiar el default **sin** desinstalar el otro |
+| `specify integration switch <key>` | Cambia de agente **desinstalando** el anterior — no usar si quieres ambos |
 | `specify extension search` | Buscar extensions comunitarias |
 
 ---
 
 ## Tips
 
-- **Escribe specs claros:** Cuanto mas especifico seas en `/speckit.specify`, mejor sera el resultado.
-- **Revisa el plan antes de implementar:** Si el plan no te convence, edita el spec y vuelve a `/speckit.plan`.
-- **Usa `/speckit.clarify`** si tu spec tiene areas ambiguas antes de generar el plan.
+- **Escribe specs claros:** Cuanto mas especifico seas en `/speckit-specify`, mejor sera el resultado.
+- **Revisa el plan antes de implementar:** Si el plan no te convence, edita el spec y vuelve a `/speckit-plan`.
+- **Usa `/speckit-clarify`** si tu spec tiene areas ambiguas antes de generar el plan.
 - **La constitution es opcional pero recomendada:** Define estandares que el agente respetara durante toda la implementacion.
 - **Agrega `.specify/` a `.gitignore`** si contiene datos sensibles del agente.
+- **No uses `specify init --here --force`** en este repo para “pasar a Cursor”: pisa infra compartida. Usa `integration install` + `integration use`.
 
 ---
 
