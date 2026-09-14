@@ -1,0 +1,675 @@
+openapi: 3.0.3
+info:
+  title: PyMEs Portuaria API
+  description: >
+    API interna de gestión y trazabilidad de cargas para PyMEs logísticas portuarias.
+    No integra DIAN, terminales ni navieras. Autenticación JWT Bearer.
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080/api/v1
+tags:
+  - name: auth
+  - name: usuarios
+  - name: clientes
+  - name: cargas
+  - name: incidencias
+  - name: documentos
+  - name: trazabilidad
+  - name: metricas
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Iniciar sesión
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Token emitido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Usuario actual
+      operationId: me
+      responses:
+        '200':
+          description: Perfil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '401':
+          $ref: '#/components/responses/Error'
+
+  /usuarios:
+    get:
+      tags: [usuarios]
+      summary: Listar usuarios de la organización
+      operationId: listUsuarios
+      x-required-roles: [administrador]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Usuario'
+        '403':
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [usuarios]
+      summary: Crear usuario
+      operationId: createUsuario
+      x-required-roles: [administrador]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUsuarioRequest'
+      responses:
+        '201':
+          description: Creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+
+  /usuarios/{id}:
+    patch:
+      tags: [usuarios]
+      summary: Actualizar o desactivar usuario
+      operationId: patchUsuario
+      x-required-roles: [administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchUsuarioRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '404':
+          $ref: '#/components/responses/Error'
+
+  /clientes:
+    get:
+      tags: [clientes]
+      summary: Listar clientes
+      operationId: listClientes
+      x-required-roles: [administrador, operador, gerente]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Cliente'
+    post:
+      tags: [clientes]
+      summary: Registrar cliente
+      operationId: createCliente
+      x-required-roles: [operador, administrador]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClienteRequest'
+      responses:
+        '201':
+          description: Creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cliente'
+
+  /cargas:
+    get:
+      tags: [cargas]
+      summary: Listar cargas (cliente solo las suyas)
+      operationId: listCargas
+      parameters:
+        - name: estado
+          in: query
+          schema:
+            $ref: '#/components/schemas/EstadoCarga'
+        - name: cliente_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Carga'
+    post:
+      tags: [cargas]
+      summary: Registrar carga
+      operationId: createCarga
+      x-required-roles: [operador, administrador]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCargaRequest'
+      responses:
+        '201':
+          description: Creado (también evento carga_creada)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Carga'
+
+  /cargas/{id}:
+    get:
+      tags: [cargas]
+      summary: Detalle de carga
+      operationId: getCarga
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Carga'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+
+  /cargas/{id}/estados:
+    post:
+      tags: [cargas]
+      summary: Cambiar estado (evento de trazabilidad en la misma transacción)
+      operationId: cambiarEstadoCarga
+      x-required-roles: [operador, administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CambiarEstadoRequest'
+      responses:
+        '200':
+          description: Estado actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Carga'
+        '409':
+          $ref: '#/components/responses/Error'
+
+  /cargas/{id}/trazabilidad:
+    get:
+      tags: [trazabilidad]
+      summary: Línea de tiempo cronológica
+      operationId: listTrazabilidad
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Eventos ordenados por occurred_at asc
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EventoTrazabilidad'
+
+  /cargas/{id}/incidencias:
+    get:
+      tags: [incidencias]
+      operationId: listIncidencias
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Incidencia'
+    post:
+      tags: [incidencias]
+      operationId: createIncidencia
+      x-required-roles: [operador, administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIncidenciaRequest'
+      responses:
+        '201':
+          description: Creada + evento incidencia_abierta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incidencia'
+
+  /incidencias/{id}/cerrar:
+    post:
+      tags: [incidencias]
+      operationId: cerrarIncidencia
+      x-required-roles: [operador, administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Cerrada + evento incidencia_cerrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incidencia'
+
+  /cargas/{id}/documentos:
+    get:
+      tags: [documentos]
+      summary: Listar metadatos (cliente solo visible_cliente=true)
+      operationId: listDocumentos
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Documento'
+    post:
+      tags: [documentos]
+      summary: Subir archivo
+      operationId: uploadDocumento
+      x-required-roles: [operador, administrador]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                visible_cliente:
+                  type: boolean
+                  default: false
+      responses:
+        '201':
+          description: Subido + evento documento_adjunto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Documento'
+        '400':
+          $ref: '#/components/responses/Error'
+
+  /documentos/{id}/download:
+    get:
+      tags: [documentos]
+      operationId: downloadDocumento
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Bytes del archivo
+          content:
+            application/pdf: {}
+            image/jpeg: {}
+            image/png: {}
+        '403':
+          $ref: '#/components/responses/Error'
+
+  /metricas:
+    get:
+      tags: [metricas]
+      summary: Tablero agregado de la organización
+      operationId: getMetricas
+      x-required-roles: [administrador, gerente]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metricas'
+        '403':
+          $ref: '#/components/responses/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Error:
+      description: Error uniforme
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error:
+          type: string
+          example: Carga no encontrada
+        code:
+          type: integer
+          example: 404
+    Rol:
+      type: string
+      enum: [administrador, operador, gerente, cliente]
+    EstadoCarga:
+      type: string
+      enum: [registrada, en_transito, en_puerto, entregada, cancelada]
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    LoginResponse:
+      type: object
+      required: [access_token, token_type, usuario]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        usuario:
+          $ref: '#/components/schemas/Usuario'
+    Usuario:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        nombre:
+          type: string
+        rol:
+          $ref: '#/components/schemas/Rol'
+        cliente_id:
+          type: string
+          format: uuid
+          nullable: true
+        activo:
+          type: boolean
+    CreateUsuarioRequest:
+      type: object
+      required: [email, password, nombre, rol]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        nombre:
+          type: string
+        rol:
+          $ref: '#/components/schemas/Rol'
+        cliente_id:
+          type: string
+          format: uuid
+    PatchUsuarioRequest:
+      type: object
+      properties:
+        nombre:
+          type: string
+        activo:
+          type: boolean
+        rol:
+          $ref: '#/components/schemas/Rol'
+    Cliente:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        razon_social:
+          type: string
+        nit:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        activo:
+          type: boolean
+    CreateClienteRequest:
+      type: object
+      required: [razon_social]
+      properties:
+        razon_social:
+          type: string
+        nit:
+          type: string
+        email:
+          type: string
+          format: email
+    Carga:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        cliente_id:
+          type: string
+          format: uuid
+        referencia:
+          type: string
+        descripcion:
+          type: string
+        origen:
+          type: string
+        destino:
+          type: string
+        estado:
+          $ref: '#/components/schemas/EstadoCarga'
+        retrasada:
+          type: boolean
+          readOnly: true
+        fecha_comprometida:
+          type: string
+          format: date
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    CreateCargaRequest:
+      type: object
+      required: [cliente_id, referencia]
+      properties:
+        cliente_id:
+          type: string
+          format: uuid
+        referencia:
+          type: string
+        descripcion:
+          type: string
+        origen:
+          type: string
+        destino:
+          type: string
+        fecha_comprometida:
+          type: string
+          format: date
+    CambiarEstadoRequest:
+      type: object
+      required: [estado]
+      properties:
+        estado:
+          $ref: '#/components/schemas/EstadoCarga'
+        nota:
+          type: string
+    Incidencia:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        carga_id:
+          type: string
+          format: uuid
+        titulo:
+          type: string
+        descripcion:
+          type: string
+        tipo:
+          type: string
+        estado:
+          type: string
+          enum: [abierta, cerrada]
+        created_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+    CreateIncidenciaRequest:
+      type: object
+      required: [titulo, descripcion]
+      properties:
+        titulo:
+          type: string
+        descripcion:
+          type: string
+        tipo:
+          type: string
+          default: otro
+    Documento:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        carga_id:
+          type: string
+          format: uuid
+        nombre_original:
+          type: string
+        content_type:
+          type: string
+        tamano_bytes:
+          type: integer
+        visible_cliente:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    EventoTrazabilidad:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        carga_id:
+          type: string
+          format: uuid
+        tipo:
+          type: string
+          enum:
+            - carga_creada
+            - estado_cambiado
+            - incidencia_abierta
+            - incidencia_cerrada
+            - documento_adjunto
+        actor_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+        estado_anterior:
+          type: string
+          nullable: true
+        estado_nuevo:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+    Metricas:
+      type: object
+      properties:
+        cargas_activas:
+          type: integer
+        cargas_retrasadas:
+          type: integer
+        incidencias_abiertas:
+          type: integer
+        tiempo_promedio_horas_hasta_entrega:
+          type: number
+          format: float
+          nullable: true
+
+security:
+  - bearerAuth: []
