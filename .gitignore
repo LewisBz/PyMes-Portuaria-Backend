@@ -1,0 +1,16 @@
+.env
+bin/
+data/uploads/
+*.exe
+*.test
+*.out
+vendor/
+graphify-out/
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+coverage.out
+.idea/
+.vscode/
+
