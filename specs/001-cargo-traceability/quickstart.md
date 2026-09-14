@@ -44,7 +44,7 @@ Sustituye `$TOKEN_*` tras cada login. Base: `http://localhost:8080/api/v1`.
 1. Como operador: `POST /clientes` → 201.
 2. `POST /cargas` con `cliente_id` y `referencia` única → 201, `estado=registrada`.
 3. `GET /cargas/{id}/trazabilidad` incluye evento `carga_creada`.
-4. Como cliente de **otro** cliente: `GET /cargas/{id}` → 403 o 404.
+4. Como cliente de **otro** cliente: `GET /cargas/{id}` → **404** `{code:404}` (nunca 403).
 
 ### 3. Cambio de estado y línea de tiempo (P1)
 

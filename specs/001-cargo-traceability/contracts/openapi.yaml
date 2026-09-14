@@ -3,7 +3,8 @@ info:
   title: PyMEs Portuaria API
   description: >
     API interna de gestión y trazabilidad de cargas para PyMEs logísticas portuarias.
-    No integra DIAN, terminales ni navieras. Autenticación JWT Bearer.
+    No integra DIAN, terminales ni navieras. Autenticación JWT Bearer cuyos claims
+    mandatorios son user_id, organizacion_id y rol.
   version: 0.1.0
 servers:
   - url: http://localhost:8080/api/v1
@@ -22,6 +23,9 @@ paths:
     post:
       tags: [auth]
       summary: Iniciar sesión
+      description: >
+        Emite access_token JWT con claims mandatorios user_id, organizacion_id y rol.
+        Rechaza organización inactiva o usuario inactivo con 401.
       operationId: login
       security: []
       requestBody:
@@ -32,7 +36,7 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
       responses:
         '200':
-          description: Token emitido
+          description: Token emitido; claims JWT = user_id, organizacion_id, rol
           content:
             application/json:
               schema:
@@ -155,7 +159,7 @@ paths:
   /cargas:
     get:
       tags: [cargas]
-      summary: Listar cargas (cliente solo las suyas)
+      summary: Listar cargas (cliente solo las suyas; create/list/get, sin PUT/DELETE)
       operationId: listCargas
       parameters:
         - name: estado
@@ -189,7 +193,7 @@ paths:
               $ref: '#/components/schemas/CreateCargaRequest'
       responses:
         '201':
-          description: Creado (también evento carga_creada)
+          description: Creado (estado registrada). Evento carga_creada se persiste desde US3 (migración 000005).
           content:
             application/json:
               schema:
@@ -199,6 +203,9 @@ paths:
     get:
       tags: [cargas]
       summary: Detalle de carga
+      description: >
+        404 si la carga no existe, no pertenece al tenant del JWT, o un cliente
+        pide una carga de otro cliente. Nunca 403 para ocultar existencia.
       operationId: getCarga
       parameters:
         - $ref: '#/components/parameters/Id'
@@ -209,10 +216,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Carga'
-        '403':
-          $ref: '#/components/responses/Error'
         '404':
-          $ref: '#/components/responses/Error'
+          description: No encontrada en el alcance del llamador (incluye carga de otro cliente)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /cargas/{id}/estados:
     post:
@@ -242,18 +251,27 @@ paths:
     get:
       tags: [trazabilidad]
       summary: Línea de tiempo cronológica
+      description: >
+        Roles operador, gerente, administrador y cliente dueño reciben 200.
+        Cliente u org fuera de alcance → 404.
       operationId: listTrazabilidad
       parameters:
         - $ref: '#/components/parameters/Id'
       responses:
         '200':
-          description: Eventos ordenados por occurred_at asc
+          description: Eventos ordenados por occurred_at asc (incluye rol gerente)
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/EventoTrazabilidad'
+        '404':
+          description: Carga no visible para el llamador
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /cargas/{id}/incidencias:
     get:
@@ -390,6 +408,9 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: >
+        Claims mandatorios del payload JWT: user_id, organizacion_id, rol.
+        El middleware MUST rechazar si organizaciones.activa es false.
   parameters:
     Id:
       name: id
@@ -421,7 +442,20 @@ components:
       enum: [administrador, operador, gerente, cliente]
     EstadoCarga:
       type: string
+      description: Enum SQL inmutable en v1. retrasada no es un estado.
       enum: [registrada, en_transito, en_puerto, entregada, cancelada]
+    JwtClaims:
+      type: object
+      required: [user_id, organizacion_id, rol]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        organizacion_id:
+          type: string
+          format: uuid
+        rol:
+          $ref: '#/components/schemas/Rol'
     LoginRequest:
       type: object
       required: [email, password]
@@ -435,18 +469,25 @@ components:
     LoginResponse:
       type: object
       required: [access_token, token_type, usuario]
+      description: access_token is a JWT whose payload MUST be JwtClaims
       properties:
         access_token:
           type: string
+          description: JWT firmado; payload = JwtClaims (user_id, organizacion_id, rol)
         token_type:
           type: string
           example: Bearer
+        claims:
+          $ref: '#/components/schemas/JwtClaims'
         usuario:
           $ref: '#/components/schemas/Usuario'
     Usuario:
       type: object
       properties:
         id:
+          type: string
+          format: uuid
+        organizacion_id:
           type: string
           format: uuid
         email:
@@ -536,10 +577,17 @@ components:
         retrasada:
           type: boolean
           readOnly: true
+          description: >
+            Derivado: fecha_comprometida < NOW() AND estado != entregada. No es un estado del enum.
         fecha_comprometida:
           type: string
           format: date
           nullable: true
+        fecha_entrega:
+          type: string
+          format: date-time
+          nullable: true
+          description: Seteada al transicionar a entregada; usada en tiempo promedio total de entrega
         created_at:
           type: string
           format: date-time
@@ -666,10 +714,13 @@ components:
           type: integer
         incidencias_abiertas:
           type: integer
-        tiempo_promedio_horas_hasta_entrega:
+        tiempo_promedio_total_entrega_horas:
           type: number
           format: float
           nullable: true
+          description: >
+            AVG(fecha_entrega - created_at) en horas sobre cargas en estado entregada.
+            v1 no calcula intervalos intermedios entre estados.
 
 security:
   - bearerAuth: []

@@ -16,11 +16,11 @@ El administrador inicia sesión, crea usuarios con uno de los cuatro roles inter
 
 **Why this priority**: Sin identidad y roles no hay operación segura ni aislamiento de datos entre clientes.
 
-**Independent Test**: Crear un administrador semilla, iniciar sesión, crear un operador y un cliente, y verificar que un token de cliente no puede listar usuarios ni crear cargas.
+**Independent Test**: Crear un administrador semilla, iniciar sesión, crear un operador y un cliente, y verificar que un token de cliente no puede listar usuarios (`GET /api/v1/usuarios` → 403).
 
 **Acceptance Scenarios**:
 
-1. **Given** un usuario activo con credenciales válidas, **When** inicia sesión, **Then** recibe un token y su rol.
+1. **Given** un usuario activo con credenciales válidas en una organización activa, **When** inicia sesión, **Then** recibe un JWT cuyos claims incluyen `user_id`, `organizacion_id` y `rol`.
 2. **Given** un administrador autenticado, **When** crea un usuario con rol Operador, **Then** el operador puede iniciar sesión.
 3. **Given** un cliente autenticado, **When** intenta crear o listar usuarios, **Then** el sistema rechaza la petición.
 4. **Given** credenciales inválidas o cuenta desactivada, **When** intenta iniciar sesión, **Then** el sistema rechaza el acceso sin revelar si el correo existe.
@@ -33,7 +33,7 @@ El operador registra clientes de la PyME y altas de carga (referencia, cliente d
 
 **Why this priority**: Es el núcleo operativo: sin cargas no hay trazabilidad ni documentos.
 
-**Independent Test**: Autenticado como operador, crear un cliente, crear una carga asociada y listarla; un cliente autenticado no ve cargas de otros clientes.
+**Independent Test**: Autenticado como operador, crear un cliente, crear una carga asociada y listarla; un cliente autenticado no ve cargas de otros clientes; `POST /api/v1/cargas` con token de cliente → 403; `GET /api/v1/cargas/{id}` de una carga de otro cliente → **404** (no 403).
 
 **Acceptance Scenarios**:
 
@@ -49,19 +49,20 @@ El operador actualiza el estado de una carga. Cada cambio queda en una línea de
 
 **Why this priority**: Resuelve el problema central (historial disperso, sin responsables ni incidencias ligadas al tiempo).
 
-**Independent Test**: Cambiar el estado de una carga dos veces y obtener la línea de tiempo ordenada; un cliente no puede cambiar estados.
+**Independent Test**: Cambiar el estado de una carga dos veces y obtener la línea de tiempo ordenada; un **gerente** obtiene **200** en `GET /api/v1/cargas/{id}/trazabilidad`; un cliente no puede cambiar estados.
 
 **Acceptance Scenarios**:
 
 1. **Given** una carga existente, **When** el operador cambia su estado, **Then** el estado actual se actualiza y se añade un evento de trazabilidad inmutable.
 2. **Given** un cliente dueño de la carga, **When** consulta la línea de tiempo, **Then** ve los eventos en orden cronológico.
-3. **Given** un cliente, **When** intenta cambiar el estado, **Then** el sistema rechaza la petición.
+3. **Given** un gerente autenticado de la misma organización, **When** consulta `GET /api/v1/cargas/{id}/trazabilidad`, **Then** recibe **200** y la línea de tiempo.
+4. **Given** un cliente, **When** intenta cambiar el estado, **Then** el sistema rechaza la petición.
 
 ---
 
 ### User Story 4 - Incidencias operativas (Priority: P2)
 
-El operador registra incidencias ligadas a una carga (descripción, severidad o tipo, estado abierta/cerrada). Quedan visibles en el detalle de la carga y en la trazabilidad.
+El operador registra incidencias ligadas a una carga (descripción, `tipo`, estado abierta/cerrada). Quedan visibles en el detalle de la carga y en la trazabilidad.
 
 **Why this priority**: Completa el historial operativo; es independiente del cambio de estado pero complementario.
 
@@ -92,7 +93,7 @@ El operador adjunta documentos (p. ej. PDF) a una carga. El cliente solo descarg
 
 ### User Story 6 - Tablero de métricas para gerencia (Priority: P3)
 
-El gerente (y el administrador) consulta indicadores: cargas activas, retrasos, tiempos promedio entre estados e incidencias abiertas. El cliente no accede al tablero global.
+El gerente (y el administrador) consulta indicadores: cargas activas, retrasos (`retrasada` derivado), tiempo promedio total de entrega en horas e incidencias abiertas. El cliente no accede al tablero global.
 
 **Why this priority**: Valor estratégico; depende de datos de P1/P2.
 
@@ -108,7 +109,7 @@ El gerente (y el administrador) consulta indicadores: cargas activas, retrasos, 
 ### Edge Cases
 
 - Token JWT expirado o manipulado: rechazar con 401, sin filtrar datos.
-- Un cliente intenta acceder por ID a una carga de otro cliente: 404 o 403, sin filtrar existencia innecesaria.
+- Un cliente intenta acceder por ID a una carga de otro cliente o fuera de su tenant: **404 Not Found** (nunca 403; no revelar existencia).
 - Cambio de estado al mismo estado: rechazar o no generar evento duplicado (se rechaza).
 - Eventos de trazabilidad no se editan ni borran (solo append).
 - Organización (PyME) inactiva o usuario desactivado: bloquear login y peticiones autenticadas.
@@ -119,7 +120,7 @@ El gerente (y el administrador) consulta indicadores: cargas activas, retrasos, 
 
 ### Functional Requirements
 
-- **FR-001**: El sistema MUST autenticar usuarios internos con correo y contraseña y emitir JWT con `user_id` y rol.
+- **FR-001**: El sistema MUST autenticar usuarios internos con correo y contraseña y emitir JWT cuyos claims mandatorios son `user_id`, `organizacion_id` y `rol`. El middleware JWT MUST rechazar peticiones si `organizaciones.activa` es false (además de usuario inactivo).
 - **FR-002**: El sistema MUST soportar roles Administrador, Operador logístico, Gerente y Cliente, y aplicar autorización por ruta y por recurso (el cliente solo sus cargas).
 - **FR-003**: Las contraseñas MUST almacenarse con hash irreversible (nunca en texto plano).
 - **FR-004**: El administrador MUST poder crear, listar, actualizar y desactivar usuarios de su organización.
@@ -130,7 +131,7 @@ El gerente (y el administrador) consulta indicadores: cargas activas, retrasos, 
 - **FR-009**: El operador MUST poder abrir y cerrar incidencias asociadas a una carga; MUST quedar reflejado en trazabilidad.
 - **FR-010**: El operador MUST poder adjuntar documentos a una carga y marcar visibilidad para el cliente.
 - **FR-011**: El cliente MUST poder listar y descargar solo documentos autorizados de sus cargas.
-- **FR-012**: Gerente y administrador MUST poder consultar métricas operativas agregadas (cargas activas, retrasos, tiempos promedio, incidencias abiertas).
+- **FR-012**: Gerente y administrador MUST poder consultar métricas operativas agregadas: cargas activas, cargas retrasadas (flag derivado), incidencias abiertas, y **tiempo promedio total de entrega** en horas (`fecha_entrega - created_at` solo sobre cargas con estado `entregada`). v1 MUST NOT calcular intervalos intermedios entre estados.
 - **FR-013**: El sistema MUST NO integrar ni sustituir sistemas oficiales (DIAN, terminales, navieras); el alcance es operativa interna de la PyME.
 - **FR-014**: Errores HTTP MUST devolver un JSON uniforme (`error`, `code`).
 - **FR-015**: Cada registro operativo MUST pertenecer a una organización (tenant SaaS) para aislamiento entre PyMEs.
@@ -152,17 +153,19 @@ El gerente (y el administrador) consulta indicadores: cargas activas, retrasos, 
 - **SC-001**: Un operador puede registrar un cliente, una carga, un cambio de estado y ver la línea de tiempo en un único flujo autenticado (API), sin hojas de cálculo.
 - **SC-002**: Un cliente autenticado obtiene estado, trazabilidad y documentos autorizados de sus cargas y no puede ver ni mutar datos de otros clientes (verificado por pruebas de autorización).
 - **SC-003**: El 100% de los cambios de estado persistidos tienen evento de trazabilidad con actor y estados anterior/nuevo.
-- **SC-004**: Las pruebas de contrato de la API cubren autenticación, CRUD de cargas, trazabilidad, incidencias, documentos y métricas para los cuatro roles.
+- **SC-004**: Las pruebas de contrato de la API cubren autenticación, flujo de alta, listado y detalle de cargas (create/list/get), trazabilidad, incidencias, documentos y métricas para los cuatro roles.
 - **SC-005**: Un gerente obtiene métricas agregadas sin acceder a integraciones externas.
 
 ## Assumptions
 
 - Este repositorio implementa **solo el backend** (API REST + PostgreSQL + almacenamiento de archivos); el frontend web es otro repositorio o fase posterior.
 - El modelo SaaS es **multi-tenant por `organizacion_id`** en una misma base de datos (no un esquema por PyME en v1).
+- **v1 multi-tenant opera bajo una sola organización aprovisionada mediante seed/despliegue inicial** (no hay API de alta de una segunda PyME).
 - Facturación de suscripción mensual/anual queda **fuera de v1** (se asume organización activa).
 - HTTP JSON REST; no hay notificaciones push ni email transaccional en v1 salvo error de API.
-- Estados de carga se modelan como catálogo configurable con un conjunto inicial (p. ej. registrada, en tránsito, en puerto, entregada, retrasada).
-- “Retraso” se calcula contra una fecha comprometida opcional en la carga (`fecha_comprometida`).
+- Estados de carga en v1 son un **enum SQL inmutable**: `registrada`, `en_transito`, `en_puerto`, `entregada`, `cancelada`. No hay catálogo editable en runtime. `retrasada` **no** es un estado.
+- Flag derivado `retrasada` (no persistido): `fecha_comprometida < NOW() AND estado != 'entregada'`. Se expone en API y en métricas (`cargas_retrasadas`).
+- Tiempo promedio total de entrega (v1): media de `fecha_entrega - created_at` en horas, solo cargas `entregada`. Sin intervalos intermedios entre estados.
 - Tamaño máximo de documento y tipos permitidos: PDF, JPEG, PNG; máximo 10 MB por archivo.
 - Datos de prueba son sintéticos (amenaza de no acceder a datos reales de puerto).
-- Constitución del proyecto aún es plantilla; las reglas de diseño de esta feature (monolito modular, repositorios, sin acoplar controladores a GORM) rigen el plan.
+- Rige la constitution **v1.0.0** (monolito modular, contrato HTTP `/api/v1`, tests de contrato antes de implementar).

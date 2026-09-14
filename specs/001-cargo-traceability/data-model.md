@@ -60,13 +60,16 @@ Cliente comercial de la PyME (no confundir con rol).
 | descripcion | text | opcional |
 | origen | varchar(200) | opcional |
 | destino | varchar(200) | opcional |
-| estado | enum | ver catálogo |
-| fecha_comprometida | date | nullable; base de “retraso” |
+| estado | enum SQL inmutable v1 | `registrada`, `en_transito`, `en_puerto`, `entregada`, `cancelada` |
+| fecha_comprometida | date | nullable; base del flag derivado `retrasada` |
+| fecha_entrega | timestamptz | nullable; se setea al transicionar a `entregada`; base del tiempo promedio de entrega |
 | created_at, updated_at | timestamptz | |
 
-**Estado catálogo**: `registrada` (alta), `en_transito`, `en_puerto`, `entregada`, `cancelada`.
+**Estado (enum SQL inmutable en v1)**: `registrada` (alta), `en_transito`, `en_puerto`, `entregada`, `cancelada`. `retrasada` **no** es valor del enum.
 
-**Derived**: `retrasada` = `fecha_comprometida < today` AND estado ∉ (`entregada`, `cancelada`). No se persiste; se expone en API y métricas.
+**Derived**: `retrasada` (no persistido) = `fecha_comprometida IS NOT NULL AND fecha_comprometida < NOW() AND estado != 'entregada'`. Se expone en API y en `cargas_retrasadas`.
+
+**Tiempo promedio total de entrega (métricas v1)**: `AVG(fecha_entrega - created_at)` en horas, solo filas con `estado = 'entregada'` y `fecha_entrega` not null. Sin intervalos intermedios entre estados.
 
 **State transitions**: desde no terminal hacia otro distinto; mismo estado → 409. Terminal (`entregada`, `cancelada`) no cambia salvo administrador (v1: **no** se reabre).
 
@@ -118,7 +121,7 @@ Inmutable. Sin `updated_at`. Sin DELETE en aplicación.
 | estado_nuevo | varchar(40) | null si no aplica |
 | payload | jsonb | ids relacionados, notas cortas |
 
-**Rule**: todo cambio de estado de carga o de incidencia **MUST** insertar un evento en la misma transacción.
+**Rule**: todo cambio de estado de carga o de incidencia **MUST** insertar un evento en la misma transacción. DDL de `eventos_trazabilidad` **solo** en `migrations/000005_create_eventos_trazabilidad.up.sql`.
 
 ## Relationships (overview)
 
@@ -137,3 +140,4 @@ Organizacion
 - FK con `ON DELETE RESTRICT` en cargas/eventos (no borrar historia).
 - Índices: `(organizacion_id, email)` usuarios; `(organizacion_id, referencia)` cargas; `(carga_id, occurred_at)` eventos.
 - Toda query de listado filtra `organizacion_id` del JWT; si rol `cliente`, además `cargas.cliente_id = usuario.cliente_id`.
+- `GET` de una carga fuera de ese alcance MUST responder **404**, no 403.
