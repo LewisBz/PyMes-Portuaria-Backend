@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.env.*
+bin/
+data/
+graphify-out/
+*.md
+docs/
+specs/
+.cursor/
+.opencode/
+.specify/
+*.exe
+*.test
+coverage.out
